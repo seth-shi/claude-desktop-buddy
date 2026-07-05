@@ -1,0 +1,7 @@
+# build artifacts
+claude-buddy-usage
+claude-buddy-usage.exe
+*.exe
+
+# runtime logs
+*.log

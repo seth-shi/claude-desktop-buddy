@@ -1,172 +1,183 @@
-# claude-desktop-buddy
+# Claude Hardware Buddy · Shenron Firmware
 
-Claude for macOS and Windows can connect Claude Cowork and Claude Code to
-maker devices over BLE, so developers and makers can build hardware that
-displays permission prompts, recent messages, and other interactions. We've
-been impressed by the creativity of the maker community around Claude -
-providing a lightweight, opt-in API is our way of making it easier to build
-fun little hardware devices that integrate with Claude.
+**English** | [中文](README.zh-CN.md)
 
-> **Building your own device?** You don't need any of the code here. See
-> **[REFERENCE.md](REFERENCE.md)** for the wire protocol: Nordic UART
-> Service UUIDs, JSON schemas, and the folder push transport.
+Put an animated **Chinese dragon (Shenron)** on your desk that shows your live Claude activity:
 
-As an example, we built a desk pet on ESP32 that lives off permission
-approvals and interaction with Claude. It sleeps when nothing's happening,
-wakes when sessions start, gets visibly impatient when an approval prompt is
-waiting, and lets you approve or deny right from the device.
+- 🐉 **Session heartbeat** — the Claude desktop app connects over BLE and tells the device what's running, how many tokens you've used, and whether something is waiting on a permission prompt. The dragon changes pose to match.
+- 📊 **Subscription quota** — a small local Go program pushes your 5-hour and 7-day usage windows to the device over USB serial, drawn as the two side bars.
 
-<p align="center">
-  <img src="docs/device.jpg" alt="M5StickC Plus running the buddy firmware" width="500">
-</p>
+Runs on an ESP32-S3 board (**ES3N28P**) with a 240×320 ILI9341 display. Sessions travel over BLE, quota over USB serial — two independent channels that work at the same time.
 
-## Hardware
+> This repo is a custom firmware implementation of the [Claude Hardware Buddy BLE protocol](REFERENCE.md), reskinned with a dragon theme and extended with subscription-quota display. The protocol itself is independent of this repo — anything that can advertise the Nordic UART Service can implement it.
 
-The firmware targets ESP32 with the Arduino framework. As written, it
-depends on the M5StickCPlus library for its display, IMU, and button
-drivers—so you'll need that board, or a fork that swaps those drivers for
-your own pin layout.
+---
 
-## Flashing
+## ✨ Features
 
-Install
-[PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/),
-then:
+- **Dragon state animation**: sleeping (disconnected) / idle / busy (multiple sessions generating) / attention (waiting on your approval) / celebrating (task done)
+- **Side quota bars**: 5h + 7d windows; the reset countdown sits **above** each bar (`2h`/`30m`, or `3d`/`6h` at day scale), the remaining percentage **below**; the bar turns dragon-gold when `< 50%` remains, and hides entirely (background only) when no data has arrived
+- **Owner name** up top + a 2×2 grid of info cards (token usage, session count, and other live stats)
+- **Secure BLE pairing**: LE Secure Connections + 6-digit passkey bonding, AES-CCM encrypted link, no re-pairing on reconnect
+- **Permission prompts**: when the desktop app sends a permission request, the dragon enters the "attention" state (device-side response logic per the protocol)
 
-```bash
-pio run -t upload
-```
+---
 
-If you're starting from a previously-flashed device, wipe it first:
+## 🧰 Hardware (ES3N28P)
 
-```bash
-pio run -t erase && pio run -t upload
-```
+| Part | Model / spec |
+| --- | --- |
+| MCU | ESP32-S3-N16R8 (16 MB flash + 8 MB OPI PSRAM) |
+| Display | ILI9341 240×320, SPI2 @ 40 MHz |
+| Touch | FT6336G capacitive touch (on board, not yet used by the firmware) |
+| Power / serial | Native USB-Serial-JTAG (COM3) |
 
-Once running, you can also wipe everything from the device itself: **hold A
-→ settings → reset → factory reset → tap twice**.
+**Pins** (see [`src/display.h`](src/display.h)): `SCLK 12` · `MOSI 11` · `MISO 13` · `CS 10` · `DC 46` · `RST = EN (software reset)` · backlight `GPIO45` (PWM, active-high).
 
-## Pairing
+---
 
-To pair your device with Claude, first enable developer mode (**Help →
-Troubleshooting → Enable Developer Mode**). Then, open the Hardware Buddy
-window in **Developer → Open Hardware Buddy…**, click **Connect**, and pick
-your device from the list. macOS will prompt for Bluetooth permission on
-first connect; grant it.
-
-<p align="center">
-  <img src="docs/menu.png" alt="Developer → Open Hardware Buddy… menu item" width="420">
-  <img src="docs/hardware-buddy-window.png" alt="Hardware Buddy window with Connect button and folder drop target" width="420">
-</p>
-
-Once paired, the bridge auto-reconnects whenever both sides are awake.
-
-If discovery isn't finding the stick:
-
-- Make sure it's awake (any button press)
-- Check the stick's settings menu → bluetooth is on
-
-## Controls
-
-|                         | Normal               | Pet         | Info        | Approval    |
-| ----------------------- | -------------------- | ----------- | ----------- | ----------- |
-| **A** (front)           | next screen          | next screen | next screen | **approve** |
-| **B** (right)           | scroll transcript    | next page   | next page   | **deny**    |
-| **Hold A**              | menu                 | menu        | menu        | menu        |
-| **Power** (left, short) | toggle screen off    |             |             |             |
-| **Power** (left, ~6s)   | hard power off       |             |             |             |
-| **Shake**               | dizzy                |             |             | —           |
-| **Face-down**           | nap (energy refills) |             |             |             |
-
-The screen auto-powers-off after 30s of no interaction (kept on while an
-approval prompt is up). Any button press wakes it.
-
-## ASCII pets
-
-Eighteen pets, each with seven animations (sleep, idle, busy, attention,
-celebrate, dizzy, heart). Menu → "next pet" cycles them with a counter.
-Choice persists to NVS.
-
-## GIF pets
-
-If you want a custom GIF character instead of an ASCII buddy, drag a
-character pack folder onto the drop target in the Hardware Buddy window. The
-app streams it over BLE and the stick switches to GIF mode live. **Settings
-→ delete char** reverts to ASCII mode.
-
-A character pack is a folder with `manifest.json` and 96px-wide GIFs:
-
-```json
-{
-  "name": "bufo",
-  "colors": {
-    "body": "#6B8E23",
-    "bg": "#000000",
-    "text": "#FFFFFF",
-    "textDim": "#808080",
-    "ink": "#000000"
-  },
-  "states": {
-    "sleep": "sleep.gif",
-    "idle": ["idle_0.gif", "idle_1.gif", "idle_2.gif"],
-    "busy": "busy.gif",
-    "attention": "attention.gif",
-    "celebrate": "celebrate.gif",
-    "dizzy": "dizzy.gif",
-    "heart": "heart.gif"
-  }
-}
-```
-
-State values can be a single filename or an array. Arrays rotate: each
-loop-end advances to the next GIF, useful for an idle activity carousel so
-the home screen doesn't loop one clip forever.
-
-GIFs are 96px wide; height up to ~140px stays on a 135×240 portrait screen.
-Crop tight to the character — transparent margins waste screen and shrink
-the sprite. `tools/prep_character.py` handles the resize: feed it source
-GIFs at any sizes and it produces a 96px-wide set where the character is the
-same scale in every state.
-
-The whole folder must fit under 1.8MB —
-`gifsicle --lossy=80 -O3 --colors 64` typically cuts 40–60%.
-
-See `characters/bufo/` for a working example.
-
-If you're iterating on a character and would rather skip the BLE round-trip,
-`tools/flash_character.py characters/bufo` stages it into `data/` and runs
-`pio run -t uploadfs` directly over USB.
-
-## The seven states
-
-| State       | Trigger                     | Feel                        |
-| ----------- | --------------------------- | --------------------------- |
-| `sleep`     | bridge not connected        | eyes closed, slow breathing |
-| `idle`      | connected, nothing urgent   | blinking, looking around    |
-| `busy`      | sessions actively running   | sweating, working           |
-| `attention` | approval pending            | alert, **LED blinks**       |
-| `celebrate` | level up (every 50K tokens) | confetti, bouncing          |
-| `dizzy`     | you shook the stick         | spiral eyes, wobbling       |
-| `heart`     | approved in under 5s        | floating hearts             |
-
-## Project layout
+## 📁 Repository layout
 
 ```
+platformio.ini          Firmware build config (env: es3n28p)
 src/
-  main.cpp       — loop, state machine, UI screens
-  buddy.cpp      — ASCII species dispatch + render helpers
-  buddies/       — one file per species, seven anim functions each
-  ble_bridge.cpp — Nordic UART service, line-buffered TX/RX
-  character.cpp  — GIF decode + render
-  data.h         — wire protocol, JSON parse
-  xfer.h         — folder push receiver
-  stats.h        — NVS-backed stats, settings, owner, species choice
-characters/      — example GIF character packs
-tools/           — generators and converters
+  main.cpp              Main loop: BLE + serial polling, two-tier redraw (anti-flicker)
+  display.h             LovyanGFX / ILI9341 pins & orientation
+  theme.h               Colors
+  sprites.h             Dragon sprites (RGB565)
+  ui.h                  Home screen (dragon / info cards / quota bars / passkey)
+  protocol.h            JSON protocol parsing (heartbeat + quota + pairing handshake)
+  ble_bridge.{h,cpp}    Bluedroid NUS + secure bonding
+tools/usage-bridge/     Usage bridge (Go — pushes subscription quota to serial)
+REFERENCE.md            Full BLE wire-protocol documentation
 ```
 
-## Availability
+---
 
-The BLE API is only available when the desktop apps are in developer mode
-(**Help → Troubleshooting → Enable Developer Mode**). It's intended for
-makers and developers and isn't an officially supported product feature.
+## 🔧 Firmware: build & flash
+
+Prerequisites: VS Code + the [PlatformIO](https://platformio.org/) extension (or the `pio` CLI). The first build downloads the espressif32 toolchain; behind a restricted network, set a proxy first:
+
+```powershell
+$env:HTTPS_PROXY = "http://127.0.0.1:7897"   # your proxy port
+```
+
+Plug the board in via USB (enumerates as COM3), then build + flash:
+
+```bash
+pio run -e es3n28p -t upload
+```
+
+View the serial log:
+
+```bash
+pio device monitor -e es3n28p      # 115200, native USB-Serial-JTAG
+```
+
+---
+
+## 📡 Usage bridge `tools/usage-bridge`
+
+A self-contained little program: it reads the OAuth token the Claude CLI already stored, queries your subscription usage, and writes one JSON line to the device's serial port every 5 minutes to fill the two side bars. It's an **independent channel** from BLE, so it happily runs alongside the desktop app.
+
+### Prerequisites
+
+1. Log in to the CLI with your subscription: `claude auth login` (must be a full-scope token; `setup-token` returns 401)
+2. Reachable Anthropic API — **a proxy is required in mainland China** (Anthropic returns `403 Request not allowed` to CN IPs)
+
+### Build
+
+```bash
+cd tools/usage-bridge
+# Windows
+GOTOOLCHAIN=local go build -o claude-buddy-usage.exe .
+# macOS / Linux
+GOTOOLCHAIN=local go build -o claude-buddy-usage .
+```
+
+> Dependencies are pinned to `go.bug.st/serial v1.6.2` + `go 1.24`. Build with the local toolchain (`GOTOOLCHAIN=local`) so it doesn't auto-upgrade to 1.25 (which breaks the build).
+
+### Commands
+
+> ⚠️ Go's flag parser stops at the first positional argument, so `--port`/`--proxy` etc. **must come before the subcommand**: `claude-buddy-usage --port COM3 enable`.
+
+| Command | What it does |
+| --- | --- |
+| `claude-buddy-usage` (no subcommand) | **Run for real**: fetch quota → push to serial every 300s (loops) |
+| `... test` | Fetch quota and print it, no serial. Verifies fetch/parse |
+| `... ports` | List available serial ports |
+| `... serialtest` | No token needed — hold the port open and push fake quota every 5s. Verifies host→serial→device |
+| `... refresh` | Manually trigger one CLI token refresh |
+| `... enable` | **Install auto-start** (below) and start it in the background now |
+| `... disable` | Remove auto-start + stop |
+| `... status` | Show whether auto-start is installed and the process is running |
+
+**Flags**: `--port <COM3 / /dev/tty…>` · `--proxy <url>` · `--interval <sec, default 300>` · `--once` (push once and exit) · `--token <t>`.
+
+### Running it
+
+```bash
+# With a proxy where needed; --proxy is applied to this process AND the claude child it spawns
+./claude-buddy-usage --port COM3 --proxy http://127.0.0.1:7897
+```
+
+### Auto-start at login (recommended)
+
+One command installs it as a login service that runs hidden in the background and restarts itself if it dies:
+
+```bash
+./claude-buddy-usage --port COM3 --proxy http://127.0.0.1:7897 enable
+```
+
+| Platform | Mechanism |
+| --- | --- |
+| **macOS** | launchd LaunchAgent (`~/Library/LaunchAgents/com.claudebuddy.usage.plist`, `RunAtLoad` + `KeepAlive` auto-restart) |
+| **Windows** | Login entry in the registry (`HKCU\…\Run`, no admin required; runs windowless) |
+| **Linux** | Prints guidance to create a systemd user service |
+
+Logs go to `~/.claude-buddy-usage.log`. Manage it with:
+
+```bash
+claude-buddy-usage status      # installed? process running?
+claude-buddy-usage disable     # uninstall
+```
+
+- **Harmless when the device isn't plugged in**: the `run` loop just retries opening the port every ~10s; plug the device in and the next cycle picks it up. It never crashes.
+- **Stopping / uninstalling resets the device once** (closing the port drops DTR → the ESP32-S3 auto-resets) — this is expected; the bars refill on the next push after reconnect.
+
+### How it works
+
+1. Read the OAuth token from `~/.claude/.credentials.json` → `GET /api/oauth/usage` → parse the 5h/7d remaining % + reset time → write `{"rem5":..,"sec5":..,"rem7":..,"sec7":..}` to serial.
+2. **Token refresh is delegated to the CLI**: Anthropic's edge blocks direct calls to the token endpoint, so when the token expires (401) the program runs one cheap `claude -p` (Haiku) to make the CLI refresh the token, then re-reads and retries.
+3. **DTR/RTS must be asserted** for the device to receive data (the ESP32-S3 USB-Serial-JTAG uses DTR as a "host present" flag) — the program handles this when it opens the port.
+
+---
+
+## 🔗 Pairing with the desktop app
+
+The BLE bridge is off by default. Enable it in Claude for macOS / Windows:
+
+1. **Help → Troubleshooting → Enable Developer Mode**
+2. **Developer → Open Hardware Buddy…**
+3. **Connect**, pick your `Claude-Buddy-XXXX` from the scan list, and confirm the 6-digit passkey shown on the display
+
+Once paired it auto-reconnects in the background; you only need the window open for initial pairing or the stats panel. Full steps and wire protocol are in **[REFERENCE.md](REFERENCE.md)**.
+
+---
+
+## 📝 Protocol at a glance
+
+The device parses newline-delimited UTF-8 JSON:
+
+- **Heartbeat** (BLE, desktop app): `total` / `running` / `waiting` / `tokens` / `tokens_today` / `msg` / `prompt` …
+- **Quota** (USB serial, this bridge): `rem5` / `sec5` / `rem7` / `sec7`
+- **Handshake**: `{"cmd":"status|owner|unpair"}` → ack; `{"time":[epoch,tz]}` time sync; `{"cmd":"permission",…}` permission decisions
+
+Full field tables, permission decisions, folder push, and secure-bonding details are in **[REFERENCE.md](REFERENCE.md)**.
+
+---
+
+## Credits
+
+- BLE protocol & reference: Claude Hardware Buddy (Anthropic — aimed at makers, not an officially supported feature)
+- Display: [LovyanGFX](https://github.com/lovyan03/LovyanGFX) · JSON: [ArduinoJson](https://arduinojson.org/) · Serial: [go.bug.st/serial](https://github.com/bugst/go-serial)
