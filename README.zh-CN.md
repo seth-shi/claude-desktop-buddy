@@ -95,6 +95,19 @@ pio device monitor -e es3n28p      # 115200,原生 USB-Serial-JTAG
 1. 用订阅账号登录 CLI:`claude auth login`(必须全权限 token;`setup-token` 会 401)
 2. 能访问 Anthropic API —— **国内必须带代理**(Anthropic 对中国 IP 直接返回 `403 Request not allowed`)
 
+### 下载(预编译)
+
+不想装 Go 的话,直接从 [最新 release](https://github.com/seth-shi/claude-desktop-buddy/releases/latest) 下对应平台的二进制:
+
+| 平台 | 文件 |
+| --- | --- |
+| Windows (x64) | `claude-buddy-usage_windows_amd64.exe` |
+| macOS(Apple 芯片) | `claude-buddy-usage_darwin_arm64` |
+| macOS(Intel) | `claude-buddy-usage_darwin_amd64` |
+| Linux (x64) | `claude-buddy-usage_linux_amd64` |
+
+macOS/Linux 下先 `chmod +x`;macOS 若被 Gatekeeper 拦,到「系统设置 → 隐私与安全性」放行。或按下方从源码自己编。
+
 ### 构建
 
 ```bash

@@ -5,3 +5,9 @@ claude-buddy-usage.exe
 
 # runtime logs
 *.log
+
+# release build output
+dist/
+
+# local release-packaging script (kept out of the repo by request)
+build-release.sh

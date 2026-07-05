@@ -95,6 +95,19 @@ A self-contained little program: it reads the OAuth token the Claude CLI already
 1. Log in to the CLI with your subscription: `claude auth login` (must be a full-scope token; `setup-token` returns 401)
 2. Reachable Anthropic API — **a proxy is required in mainland China** (Anthropic returns `403 Request not allowed` to CN IPs)
 
+### Download (prebuilt)
+
+No Go toolchain needed — grab a binary for your platform from the [latest release](https://github.com/seth-shi/claude-desktop-buddy/releases/latest):
+
+| Platform | File |
+| --- | --- |
+| Windows (x64) | `claude-buddy-usage_windows_amd64.exe` |
+| macOS (Apple Silicon) | `claude-buddy-usage_darwin_arm64` |
+| macOS (Intel) | `claude-buddy-usage_darwin_amd64` |
+| Linux (x64) | `claude-buddy-usage_linux_amd64` |
+
+On macOS/Linux `chmod +x` the file first (on macOS, allow it under System Settings → Privacy & Security if Gatekeeper blocks it). Or build from source below.
+
 ### Build
 
 ```bash
