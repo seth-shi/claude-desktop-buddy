@@ -13,6 +13,16 @@ Runs on an ESP32-S3 board (**ES3N28P**) with a 240×320 ILI9341 display. Session
 
 ---
 
+## 📸 Demo
+
+<p align="center">
+  <img src="docs/device.jpg" alt="The device on a desk" width="44%">
+  &nbsp;&nbsp;
+  <img src="docs/demo.gif" alt="Live demo" width="44%">
+</p>
+
+---
+
 ## ✨ Features
 
 - **Dragon state animation**: sleeping (disconnected) / idle / busy (multiple sessions generating) / attention (waiting on your approval) / celebrating (task done)

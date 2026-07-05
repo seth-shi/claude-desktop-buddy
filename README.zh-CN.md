@@ -13,6 +13,16 @@
 
 ---
 
+## 📸 效果展示
+
+<p align="center">
+  <img src="docs/device.jpg" alt="设备实拍" width="44%">
+  &nbsp;&nbsp;
+  <img src="docs/demo.gif" alt="运行演示" width="44%">
+</p>
+
+---
+
 ## ✨ 功能
 
 - **神龙状态动画**:睡觉(未连接)/ 空闲 / 忙碌(多会话生成中)/ 注意(等你批权限)/ 庆祝(任务完成)
