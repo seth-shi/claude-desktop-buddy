@@ -321,11 +321,11 @@ inline void drawHome(const char* name, uint32_t pk, bool full) {
     lcd.print(g_app.owner);
   }
 
-  // 2x2 icon cards. Swapped per request: left = cumulative, right = today.
+  // 2x2 icon cards. left = today (single coin), right = cumulative (coin stack).
   char v[12];
-  fmtK(v, sizeof(v), g_app.tokens);
-  card(CARD_L, 210, 0, v, GOLD, 1.6f);
   fmtK(v, sizeof(v), g_app.tokensToday);
+  card(CARD_L, 210, 0, v, GOLD, 1.6f);
+  fmtK(v, sizeof(v), g_app.tokens);
   card(CARD_R, 210, 1, v, GOLD, 1.6f);
   snprintf(v, sizeof(v), "%u", g_app.running);
   card(CARD_L, 254, 2, v, GREEN, 1.6f);
