@@ -210,6 +210,14 @@ inline void status(const char* s, uint16_t dot) {
   lcd.print(s);
 }
 
+// Repaint just the base dragon sprite in place. The sprite is opaque and covers
+// its whole rectangle, so pushing a new one needs no bg clear -> no flash. Used
+// by the full redraw and the in-place sprite-state swap (idle<->busy).
+inline void drawDragon(int st) {
+  lcd.setSwapBytes(true);
+  lcd.pushImage(DRAGON_X, DRAGON_Y, SPR_W, SPR_H, spriteFor(st));
+}
+
 // Per-state animated accent, redrawn on its own timer over the OV_* zone only.
 // The base dragon sprite stays static; this adds gentle motion beside it —
 // offline: zzz, idle: one pearl, busy: three orbiting pearls, attention: "???".
@@ -292,8 +300,7 @@ inline void drawHome(const char* name, uint32_t pk, bool full) {
     // top bar dot; quota bars (real values / gray when no data); dragon
     lcd.fillSmoothCircle(14, 14, 4, conn ? GREEN : DIM);
     drawQuotaBars();
-    lcd.setSwapBytes(true);
-    lcd.pushImage(DRAGON_X, DRAGON_Y, SPR_W, SPR_H, spriteFor(st));
+    drawDragon(st);
   }
 
   // clock, top-right (device name lives in the pairing view, not here)

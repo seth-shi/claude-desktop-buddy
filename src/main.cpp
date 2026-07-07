@@ -1,5 +1,5 @@
-// zthd-metrics C++ port (ES3N28P). Display (LovyanGFX) + BLE (Bluedroid NUS,
-// SC bonding) + buddy heartbeat protocol. UI ported from the Rust firmware.
+// Claude Hardware Buddy (Shenron) firmware — ES3N28P. Display (LovyanGFX) + BLE
+// (Bluedroid NUS, SC bonding) + buddy heartbeat protocol. UI ported from the Rust firmware.
 #include <Arduino.h>
 #include <esp_mac.h>
 #include "display.h"
@@ -42,7 +42,7 @@ static void drawDiag() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println("zthd-metrics C++ boot");
+  Serial.println("Claude-Buddy (Shenron) boot");
   lcd.init();
   lcd.setColorDepth(16);
   lcd.setRotation(2);
@@ -78,7 +78,11 @@ void loop() {
   uint32_t ownh = 0;  // owner name arrives just after connect -> fold into dsig
   for (const char* p = g_app.owner; *p; p++) ownh = ownh * 31u + (uint8_t)*p;
 
-  uint32_t lsig = (conn ? 1u : 0u) + ((uint32_t)st << 1) + pk * 2246822519u;
+  // Layout signature: only connect/disconnect and the pairing code swap the whole
+  // screen layout, so only those force a full fillScreen. The sprite state (st) is
+  // tracked separately (ssig) and repainted in place -> no full-screen flash.
+  uint32_t lsig = (conn ? 1u : 0u) + pk * 2246822519u;
+  uint32_t ssig = (uint32_t)st;
   uint32_t dsig = g_app.tokens * 2654435761u + g_app.tokensToday
                 + ((uint32_t)g_app.running << 4) + ((uint32_t)g_app.waiting << 8)
                 + minute * 40503u + msgh + ownh * 668265263u;
@@ -89,15 +93,23 @@ void loop() {
                 + (g_app.sec5 / 60) * 40503u + (g_app.sec7 / 60) * 668265263u;
 
   static uint32_t lastL = 0xFFFFFFFF, lastD = 0xFFFFFFFF, lastQ = 0xFFFFFFFF;
+  static uint32_t lastS = 0xFFFFFFFF;
   static uint32_t lastAnim = 0;
   static uint16_t frame = 0;
   if (lsig != lastL) {
-    ui::drawHome(btName, pk, true);   // full redraw already paints the bars
+    ui::drawHome(btName, pk, true);   // full redraw already paints the bars + dragon
     ui::drawOverlay(st, frame);
-    lastL = lsig; lastD = dsig; lastQ = qsig;
+    lastL = lsig; lastD = dsig; lastQ = qsig; lastS = ssig;
   } else if (dsig != lastD) {
     ui::drawHome(btName, pk, false);
     lastD = dsig;
+  }
+  // Sprite state changed without a layout change (e.g. idle -> busy): repaint just
+  // the dragon + its accent in place. Opaque sprite overwrite -> no full-screen flash.
+  if (ssig != lastS) {
+    ui::drawDragon(st);
+    ui::drawOverlay(st, frame);
+    lastS = ssig;
   }
   if (qsig != lastQ) { ui::drawQuotaBars(); lastQ = qsig; }
   // Gentle accent animation: advance ~3 fps, redraw only the overlay zone.
