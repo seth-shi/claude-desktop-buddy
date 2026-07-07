@@ -16,16 +16,19 @@ extern LGFX lcd;
 namespace ui {
 
 static const int DRAGON_X = 58, DRAGON_Y = 26;
+// Centre of the blank space the dragon coils around — where the idle pearl sits
+// and the seven dragon balls orbit. Tune COIL_CY to nudge them up/down.
+static const int COIL_CX = DRAGON_X + SPR_W / 2;   // 120
+static const int COIL_CY = DRAGON_Y + 120;         // 146
 // Quota columns: the bar fills from the top down, the quota % sits just below
 // it, and the reset countdown (2 lines) goes at the very bottom of the column.
 static const int BAR_Y = 24, BAR_H = 234, BAR_W = 6;
 static const int PCT_Y = 262;    // quota % text, just below the bar
 static const int RESET_Y = 274;  // reset countdown below the %; 2nd line at RESET_Y + 9
 
-// Animated-accent zone: the clear background column to the right of the dragon
-// (dragon ends x=182, right quota bar starts x=222). Overlays live here so a
-// simple fillRect(BG)+redraw per tick can't erase the dragon or the cards.
-static const int OV_X = 184, OV_Y = 36, OV_W = 36, OV_H = 110;
+// Animated accents float directly over the dragon (see drawOverlay): each tick
+// repaints the opaque sprite first, then paints the accent on top, so there is no
+// per-tick bg wipe that could carve a hole in the dragon or the cards.
 
 // ---- tiny primitive icons (drawn around center x,y) ----
 inline void iconLightning(int x, int y, uint16_t c) {
@@ -81,6 +84,50 @@ inline void ovPearl(int x, int y, int r, uint16_t c) {  // dragon pearl: orb + r
   lcd.drawCircle(x, y, r, COIN_EDGE);
   int hr = r / 3; if (hr < 1) hr = 1;
   lcd.fillCircle(x - r / 3, y - r / 3, hr, CARD);      // top-left highlight
+}
+
+// A filled 5-point star, drawn as a 10-vertex fan from its centre (the star is
+// star-shaped about its centre, so the fan fills it exactly). Below ~2px there's
+// no room for points, so it degrades to a dot.
+inline void star5(int cx, int cy, int r, uint16_t c) {
+  if (r < 2) { lcd.fillCircle(cx, cy, 1, c); return; }
+  static const float sx[10] = {0, 0.2246f, 0.951f, 0.363f, 0.588f,
+                               0, -0.588f, -0.363f, -0.951f, -0.2246f};
+  static const float sy[10] = {-1, -0.309f, -0.309f, 0.118f, 0.809f,
+                               0.382f, 0.809f, 0.118f, -0.309f, -0.309f};
+  int px[10], py[10];
+  for (int i = 0; i < 10; i++) { px[i] = cx + (int)(sx[i] * r); py[i] = cy + (int)(sy[i] * r); }
+  for (int i = 0; i < 10; i++) {
+    int j = (i + 1) % 10;
+    lcd.fillTriangle(cx, cy, px[i], py[i], px[j], py[j], c);
+  }
+}
+
+// The N red stars on a dragon ball, in the canonical 1..7 layouts. Offsets are
+// percentages of the ball radius; stars shrink a little past 4 to stay clear.
+inline void ballStars(int x, int y, int r, int n) {
+  int sr = r * (n <= 4 ? 30 : 23) / 100; if (sr < 2) sr = 2;
+  static const int8_t L[7][14] = {
+    {  0,  0,   0,  0,   0,  0,   0,  0,   0,  0,   0,  0,   0,  0},  // 1
+    {-45,-45,  45, 45,   0,  0,   0,  0,   0,  0,   0,  0,   0,  0},  // 2
+    {  0,-55, -52, 45,  52, 45,   0,  0,   0,  0,   0,  0,   0,  0},  // 3
+    {-48,-48,  48,-48, -48, 48,  48, 48,   0,  0,   0,  0,   0,  0},  // 4
+    {-52,-52,  52,-52,   0,  0, -52, 52,  52, 52,   0,  0,   0,  0},  // 5
+    {-48,-58,  48,-58, -48,  0,  48,  0, -48, 58,  48, 58,   0,  0},  // 6
+    {  0,  0,   0,-68,   0, 68, -60,-34,  60,-34, -60, 34,  60, 34},  // 7
+  };
+  const int8_t* row = L[n - 1];
+  for (int i = 0; i < n; i++)
+    star5(x + row[i * 2] * r / 100, y + row[i * 2 + 1] * r / 100, sr, RED);
+}
+
+// A dragon ball: glossy orange orb + rim + highlight, with 1..7 red stars.
+inline void drawDragonBall(int x, int y, int r, int stars) {
+  lcd.fillCircle(x, y, r, DRAGON_GOLD);
+  lcd.drawCircle(x, y, r, COIN_EDGE);
+  int hr = r / 3; if (hr < 1) hr = 1;
+  lcd.fillCircle(x - r / 2, y - r / 2, hr, CARD);      // top-left shine
+  ballStars(x, y, r, stars);
 }
 
 // Compact token count, max 5 chars. uint32_t tops out at ~4.2B so B covers it.
@@ -212,57 +259,65 @@ inline void status(const char* s, uint16_t dot) {
 
 // Repaint just the base dragon sprite in place. The sprite is opaque and covers
 // its whole rectangle, so pushing a new one needs no bg clear -> no flash. Used
-// by the full redraw and the in-place sprite-state swap (idle<->busy).
+// by the full redraw, the in-place sprite swap (idle<->busy), and every overlay
+// tick (so large accents can float over the dragon without a bg wipe).
 inline void drawDragon(int st) {
   lcd.setSwapBytes(true);
   lcd.pushImage(DRAGON_X, DRAGON_Y, SPR_W, SPR_H, spriteFor(st));
 }
 
-// Per-state animated accent, redrawn on its own timer over the OV_* zone only.
-// The base dragon sprite stays static; this adds gentle motion beside it —
-// offline: zzz, idle: one pearl, busy: three orbiting pearls, attention: "???".
-// `frame` is a free-running counter; each state mods it.
+// Text with a 1px background-coloured halo so it stays legible over the dragon
+// body (light theme: the halo carves a thin near-white moat around each glyph;
+// over the plain background the halo is invisible). Single-arg setTextColor ->
+// transparent bg, so the four outline passes don't erase one another.
+inline void outlinedText(const char* s, int x, int y, int size, uint16_t fg) {
+  lcd.setTextSize(size);
+  const int o = size >= 3 ? 2 : 1;
+  lcd.setTextColor(BG);
+  lcd.setCursor(x - o, y); lcd.print(s);
+  lcd.setCursor(x + o, y); lcd.print(s);
+  lcd.setCursor(x, y - o); lcd.print(s);
+  lcd.setCursor(x, y + o); lcd.print(s);
+  lcd.setTextColor(fg);
+  lcd.setCursor(x, y);     lcd.print(s);
+}
+
+// Per-state animated accent. The base dragon is repainted first each tick (opaque
+// -> no flash), so accents can be large and float directly over the dragon. Every
+// accent stays within the dragon's bounds ([DRAGON_X..+SPR_W] x [DRAGON_Y..+SPR_H])
+// so the sprite redraw fully clears the previous frame — no per-zone bg wipe.
+//   offline: big rising "z z z"  idle: one big pearl  busy: three orbiting pearls
+//   attention: pulsing big "?"..."???"   `frame` is a free-running counter.
 inline void drawOverlay(int st, uint16_t frame) {
-  // sleep gets its own zone hugging the dragon's head (upper-right, all bg there);
-  // every other state uses the clear column to the right of the dragon.
-  if (st == 0) {
-    static const int SZ_X = 135, SZ_Y = 28, SZ_W = 48, SZ_H = 58;
-    lcd.fillRect(SZ_X, SZ_Y, SZ_W, SZ_H, BG);
-    int cx = SZ_X + 24, baseY = SZ_Y + SZ_H;  // 159 / 86
-    int ph = frame & 3;
-    lcd.setTextColor(DIM, BG);
-    for (int i = 0; i < 3; i++) {  // three z's rising up-right beside the head
-      int sz = i + 1;
-      lcd.setTextSize(sz);
-      lcd.setCursor(cx - 8 + i * 7, baseY - 22 - i * 16 - ph * 2);
-      lcd.print("z");
-    }
-    return;
-  }
-  lcd.fillRect(OV_X, OV_Y, OV_W, OV_H, BG);
-  int cx = OV_X + OV_W / 2;    // 202
-  int baseY = OV_Y + OV_H;     // 146
+  drawDragon(st);
+  const int cx = DRAGON_X + SPR_W / 2;   // 120, dragon centre x
   switch (st) {
-    case 1: {  // idle: a single dragon pearl bobbing gently
-      static const int bob[4] = {0, -2, -3, -2};
-      ovPearl(cx, baseY - 55 + bob[frame & 3], 8, DRAGON_GOLD);
+    case 0: {  // offline: three big z's rising up-right over the upper body
+      static const int zsz[3] = {2, 3, 4};
+      int ph = frame & 3;
+      int bx = cx - 8, by = DRAGON_Y + 78;
+      for (int i = 0; i < 3; i++)
+        outlinedText("z", bx + i * 15, by - i * 24 - ph * 3, zsz[i], DIM);
     } break;
-    case 2: {  // busy: three dragon pearls orbiting, 120 deg apart
-      static const int ox[12] = {12, 10, 6, 0, -6, -10, -12, -10, -6, 0, 6, 10};
-      static const int oy[12] = {0, 6, 10, 12, 10, 6, 0, -6, -10, -12, -10, -6};
-      int ccy = baseY - 55;
-      for (int k = 0; k < 3; k++) {
-        int idx = (frame + k * 4) % 12;   // 4 steps = 120 deg
-        ovPearl(cx + ox[idx], ccy + oy[idx], 4, DRAGON_GOLD);
+    case 1: {  // idle: one big dragon pearl bobbing in the coil's blank centre
+      static const int bob[4] = {0, -3, -5, -3};
+      ovPearl(COIL_CX, COIL_CY + bob[frame & 3], 15, DRAGON_GOLD);
+    } break;
+    case 2: {  // busy: the seven dragon balls (1..7 stars) orbiting the blank space
+      const float R = 33.0f;
+      const float base = frame * 0.15f;               // slow orbit
+      for (int i = 0; i < 7; i++) {
+        float a = base + i * (6.2831853f / 7.0f);
+        int px = COIL_CX + (int)(R * cosf(a));
+        int py = COIL_CY + (int)(R * sinf(a));
+        drawDragonBall(px, py, 10, i + 1);            // i+1 stars
       }
     } break;
-    default: {  // 3 attention: pulsing "?" -> "??" -> "???"
+    default: {  // attention: pulsing "?" -> "??" -> "???", large + outlined
       static const char* q[3] = {"?", "??", "???"};
       const char* s = q[frame % 3];
-      lcd.setTextSize(2);
-      lcd.setTextColor(GOLD, BG);
-      lcd.setCursor(cx - lcd.textWidth(s) / 2, baseY - 70);
-      lcd.print(s);
+      lcd.setTextSize(3);
+      outlinedText(s, cx - lcd.textWidth(s) / 2, DRAGON_Y + 44, 3, GOLD);
     } break;
   }
 }
